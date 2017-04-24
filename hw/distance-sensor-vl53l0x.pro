@@ -1,4 +1,4 @@
-update=Sat 22 Apr 2017 10:20:03 PM EEST
+update=otrdiena, 2017. gada 25. aprīlis, plkst. 00 un 26
 version=1
 last_client=kicad
 [pcbnew]
@@ -63,3 +63,13 @@ LibName31=kicad-lib/components/_sensors
 LibName32=custom-power
 LibName33=stm32
 LibName34=/home/reinis/Sync/ee/kicad-common/mic5504
+[schematic_editor]
+version=1
+PageLayoutDescrFile=
+PlotDirectoryName=out
+SubpartIdSeparator=0
+SubpartFirstId=65
+NetFmtName=
+SpiceForceRefPrefix=0
+SpiceUseNetNumbers=0
+LabSize=60

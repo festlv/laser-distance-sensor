@@ -1,3 +1,6 @@
 [submodule "hw/kicad-lib"]
 	path = hw/kicad-lib
 	url = https://github.com/cvra/kicad-lib.git
+[submodule "fw-libopencm3/libopencm3"]
+	path = fw-libopencm3/libopencm3
+	url = https://github.com/libopencm3/libopencm3

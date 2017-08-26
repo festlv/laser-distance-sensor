@@ -16,7 +16,7 @@ int32_t VL53L0X_i2c_close(void)
 }
 
 static int i2c_write(int addr, uint8_t cmd, uint8_t * data, uint8_t len) {
-    HAL_StatusTypeDef ret = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)addr, cmd, 1, data, len, 5);
+    HAL_StatusTypeDef ret = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)addr, cmd, 1, data, len, 10);
     if (ret == HAL_OK)
         return VL53L0X_ERROR_NONE;
     else
@@ -24,7 +24,7 @@ static int i2c_write(int addr, uint8_t cmd, uint8_t * data, uint8_t len) {
 }
 
 static int i2c_read(int addr, uint8_t cmd, uint8_t * data, uint8_t len){
-    HAL_StatusTypeDef ret = HAL_I2C_Mem_Read(&hi2c1, (uint16_t)addr, cmd, 1, data, len, 5);
+    HAL_StatusTypeDef ret = HAL_I2C_Mem_Read(&hi2c1, (uint16_t)addr, cmd, 1, data, len, 10);
     if (ret == HAL_OK)
         return VL53L0X_ERROR_NONE;
     else

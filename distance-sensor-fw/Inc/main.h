@@ -62,10 +62,10 @@
 #define LED_USB_GPIO_Port GPIOA
 #define LED_USR_Pin GPIO_PIN_5
 #define LED_USR_GPIO_Port GPIOA
+#define I2C1_RST_Pin GPIO_PIN_6
+#define I2C1_RST_GPIO_Port GPIOA
 #define I2C1_INT_Pin GPIO_PIN_7
 #define I2C1_INT_GPIO_Port GPIOA
-#define I2C1_RST_Pin GPIO_PIN_1
-#define I2C1_RST_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

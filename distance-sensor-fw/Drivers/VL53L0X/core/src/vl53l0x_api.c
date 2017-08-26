@@ -48,6 +48,7 @@
 	level, TRACE_FUNCTION_NONE, ##__VA_ARGS__)
 #endif
 
+#define USE_I2C_2V8 1
 /* Group PAL General Functions */
 
 VL53L0X_Error VL53L0X_GetVersion(VL53L0X_Version_t *pVersion)

@@ -48,41 +48,48 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32f0xx_hal.h"
+#include "i2c.h"
+#include "usart.h"
 #include "usb_device.h"
+#include "gpio.h"
 
 /* USER CODE BEGIN Includes */
 #include "usbd_cdc_if.h"
 #include "vl53l0x_api.h"
 #include "vl53l0x_platform.h"
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
-I2C_HandleTypeDef hi2c1;
-
-UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+
+#define MEASUREMENT_RATE_HZ 30
+#define USE_STATUS_LED      1
+
 /* Private variables ---------------------------------------------------------*/
+
+
+uint8_t last_msg[256];
+int last_msg_len = -1;
 
 static void LOG_MSG(const char* msg)
 {
-    uint8_t buf[256];
-    buf[0] = '#';
-    strncpy(buf + 1, msg, sizeof(buf) - 3);
-    buf[sizeof(buf) - 1] = '\0';
-    int msg_len = strlen(buf);
-    buf[msg_len] = '\n';
+    last_msg[0] = '#';
+    strncpy(last_msg + 1, msg, sizeof(last_msg) - 3);
+    last_msg[sizeof(last_msg) - 1] = '\0';
+    int msg_len = strlen(last_msg);
+    last_msg[msg_len] = '\n';
     msg_len++;
-    buf[msg_len] = '\0';
-    CDC_Transmit_FS(buf, msg_len);
+    last_msg[msg_len] = '\0';
+    CDC_Transmit_FS(last_msg, msg_len);
+    HAL_UART_Transmit(&huart2, last_msg, msg_len, 5);
+    last_msg_len = msg_len;
 }
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_I2C1_Init(void);
-static void MX_USART2_UART_Init(void);
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
@@ -123,73 +130,115 @@ int main(void)
   MX_USART2_UART_Init();
 
   /* USER CODE BEGIN 2 */
-    HAL_Delay(10000);
+    bool sensor_error = false;
+
+    //reset sensor
+    HAL_GPIO_WritePin(I2C1_RST_GPIO_Port, I2C1_RST_Pin, GPIO_PIN_RESET);
+    HAL_Delay(10);
+    HAL_GPIO_WritePin(I2C1_RST_GPIO_Port, I2C1_RST_Pin, GPIO_PIN_SET);
+    HAL_Delay(5);
 
     VL53L0X_Dev_t dev;
-    dev.addr = 0x29;
+    dev.addr = 0x52;
     VL53L0X_Error status = VL53L0X_i2c_init();
     status = VL53L0X_DataInit(&dev);
-    if (status != VL53L0X_ERROR_NONE)
+    if (status != VL53L0X_ERROR_NONE) {
         LOG_MSG("data init failed");
+        sensor_error = true;
+    }
 
     status = VL53L0X_StaticInit(&dev);
-    if (status != VL53L0X_ERROR_NONE)
+    if (status != VL53L0X_ERROR_NONE) {
         LOG_MSG("static init failed");
+        sensor_error = true;
+    }
 
     uint8_t vhv_settings;
     uint8_t phase_cal;
     status = VL53L0X_PerformRefCalibration(&dev, &vhv_settings, &phase_cal);
-    if (status != VL53L0X_ERROR_NONE)
+    if (status != VL53L0X_ERROR_NONE) {
         LOG_MSG("reference calibration failed");
+        sensor_error = true;
+    }
 
     uint32_t ref_spad_count;
     uint8_t is_aperture_spads;
     status = VL53L0X_PerformRefSpadManagement(&dev,
         		&ref_spad_count, &is_aperture_spads);
-    if (status != VL53L0X_ERROR_NONE)
+    if (status != VL53L0X_ERROR_NONE) {
         LOG_MSG("spad management failed");
+        sensor_error = true;
+    }
 
 
     status = VL53L0X_SetDeviceMode(&dev, VL53L0X_DEVICEMODE_CONTINUOUS_RANGING);
-    if (status != VL53L0X_ERROR_NONE)
+    if (status != VL53L0X_ERROR_NONE) {
         LOG_MSG("set device mode failed");
+        sensor_error = true;
+    }
 
     status = VL53L0X_StartMeasurement(&dev);
-    if (status != VL53L0X_ERROR_NONE)
+    if (status != VL53L0X_ERROR_NONE) { 
         LOG_MSG("start measurement failed");
+        sensor_error = true;
+    }
+
+    if (sensor_error) {
+        HAL_GPIO_WritePin(LED_USR_GPIO_Port, LED_USR_Pin, 0);
+    }
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
     while (1)
     {
-        /* USER CODE END WHILE */
+  /* USER CODE END WHILE */
 
-        /* USER CODE BEGIN 3 */
+  /* USER CODE BEGIN 3 */
+        if (sensor_error && last_msg_len > 0) {
+            //sensor has logged an error, report last error message 
+            //in case user has not seen it if using USB
+            CDC_Transmit_FS(last_msg, last_msg_len);
+            HAL_UART_Transmit(&huart2, last_msg, last_msg_len, 5);
+            HAL_Delay(1000);
+            continue;
+        }
+
         uint8_t new_data_ready = 0;
         status = VL53L0X_GetMeasurementDataReady(&dev, &new_data_ready);
-        if (status != VL53L0X_ERROR_NONE)
+        if (status != VL53L0X_ERROR_NONE) {
             LOG_MSG("getting measurement data ready flag failed");
+        }
 
         if (new_data_ready) {
             VL53L0X_RangingMeasurementData_t data;
             status = VL53L0X_GetRangingMeasurementData(&dev, &data);
             if (status != VL53L0X_ERROR_NONE)
                 LOG_MSG("getting measurement data failed");
-
+#if USE_STATUS_LED
+            HAL_GPIO_WritePin(LED_USR_GPIO_Port, LED_USR_Pin, 0);
+#endif
             uint8_t buf[32];
             itoa(data.RangeMilliMeter, buf, 10);
-            CDC_Transmit_FS(buf, strlen(buf));
+            int str_len = strlen(buf);
+            buf[str_len] = '\n';
+            str_len++;
+            CDC_Transmit_FS(buf, str_len);
+            HAL_UART_Transmit(&huart2, buf, str_len, 5);
             if (status == VL53L0X_ERROR_NONE)
             {
                 status = VL53L0X_ClearInterruptMask(&dev, VL53L0X_REG_SYSTEM_INTERRUPT_GPIO_NEW_SAMPLE_READY);
             }
+
+#if USE_STATUS_LED
+            HAL_GPIO_WritePin(LED_USR_GPIO_Port, LED_USR_Pin, 1);
+#endif
         }
-        HAL_GPIO_TogglePin(GPIOA, LED_USB_Pin);
-        HAL_GPIO_TogglePin(GPIOA, LED_USR_Pin);
-        HAL_Delay(100);
+
+        HAL_Delay(1000 / MEASUREMENT_RATE_HZ);
     }
-    /* USER CODE END 3 */
+  /* USER CODE END 3 */
 
 }
 
@@ -246,111 +295,6 @@ void SystemClock_Config(void)
 
   /* SysTick_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
-}
-
-/* I2C1 init function */
-static void MX_I2C1_Init(void)
-{
-
-  hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x2000090E;
-  hi2c1.Init.OwnAddress1 = 0;
-  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c1.Init.OwnAddress2 = 0;
-  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
-  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-    /**Configure Analogue filter 
-    */
-  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-    /**Configure Digital filter 
-    */
-  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-}
-
-/* USART2 init function */
-static void MX_USART2_UART_Init(void)
-{
-
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 38400;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_RS485Ex_Init(&huart2, UART_DE_POLARITY_HIGH, 0, 0) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-}
-
-/** Configure pins as 
-        * Analog 
-        * Input 
-        * Output
-        * EVENT_OUT
-        * EXTI
-*/
-static void MX_GPIO_Init(void)
-{
-
-  GPIO_InitTypeDef GPIO_InitStruct;
-
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOF_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LED_USB_Pin|LED_USR_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(I2C1_RST_GPIO_Port, I2C1_RST_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : BOOT0_Pin */
-  GPIO_InitStruct.Pin = BOOT0_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(BOOT0_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : LED_USB_Pin LED_USR_Pin */
-  GPIO_InitStruct.Pin = LED_USB_Pin|LED_USR_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : I2C1_INT_Pin */
-  GPIO_InitStruct.Pin = I2C1_INT_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(I2C1_INT_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : I2C1_RST_Pin */
-  GPIO_InitStruct.Pin = I2C1_RST_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(I2C1_RST_GPIO_Port, &GPIO_InitStruct);
-
 }
 
 /* USER CODE BEGIN 4 */

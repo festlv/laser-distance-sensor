@@ -1,0 +1,3 @@
+(fp_lib_table
+  (lib (name mounting_hole)(type KiCad)(uri "$(KIPRJMOD)/mounting_hole.pretty")(options "")(descr ""))
+)
